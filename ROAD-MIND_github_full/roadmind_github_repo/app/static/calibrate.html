@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Crect x=%227%22 y=%221%22 width=%2210%22 height=%2222%22 rx=%225%22 fill=%22%2334D399%22/%3E%3Ccircle cx=%2212%22 cy=%227%22 r=%222%22 fill=%22%2304101F%22/%3E%3Ccircle cx=%2212%22 cy=%2212%22 r=%222%22 fill=%22%2304101F%22/%3E%3Ccircle cx=%2212%22 cy=%2217%22 r=%222%22 fill=%22%2304101F%22/%3E%3C/svg%3E">
+<title>Roadmind — draw road zones</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,sans-serif;color:#E2E8F0;background:#05070F;min-height:100vh}
+  header{display:flex;align-items:center;gap:12px;padding:14px 22px;flex-wrap:wrap;border-bottom:1px solid rgba(148,163,184,.12)}
+  .logo{font-weight:800;font-size:20px;background:linear-gradient(90deg,#6EE7B7,#7DD3FC,#C4B5FD);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .muted{color:#94A3B8;font-size:13px}
+  main{display:flex;gap:16px;padding:16px 22px;flex-wrap:wrap}
+  .canvas-wrap{flex:999 1 640px;min-width:0;position:relative}
+  canvas{width:100%;border-radius:12px;background:#0B1222;cursor:crosshair;display:block}
+  aside{flex:1 1 300px;display:flex;flex-direction:column;gap:12px}
+  .panel{background:rgba(15,23,42,.7);border:1px solid rgba(148,163,184,.15);border-radius:14px;padding:12px}
+  h2{font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:#94A3B8;margin:0 0 8px;font-weight:600}
+  button,select,input{font:inherit;font-size:14px;color:#E2E8F0;background:rgba(2,6,23,.7);border:1px solid rgba(148,163,184,.25);border-radius:9px;padding:8px 11px}
+  button{cursor:pointer} button:hover,button:focus,select:focus,input:focus{border-color:#7DD3FC;outline:none}
+  .primary{background:linear-gradient(135deg,#34D399,#38BDF8 55%,#A855F7);color:#04101F;font-weight:700;border:0}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .zone{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:9px;margin-bottom:6px;border:1px solid transparent}
+  .zone.active{border-color:#7DD3FC;background:rgba(56,189,248,.08)}
+  .zone input{flex:1;min-width:0;padding:5px 8px}
+  .sw{width:12px;height:12px;border-radius:3px;flex:none}
+  .msg{font-size:13px;min-height:18px}
+  label{font-size:13px;color:#94A3B8;display:block;margin-bottom:4px}
+  ol{margin:0;padding-left:18px;font-size:13px;color:#CBD5E1;line-height:1.6}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">Roadmind</span><span class="muted">Draw road zones</span>
+  <label class="muted" for="junction" style="margin:0">Junction</label>
+  <select id="junction"></select>
+  <a href="/" class="muted" style="margin-left:auto">← Back to live view</a>
+</header>
+<main>
+  <div class="canvas-wrap"><canvas id="c" width="960" height="540" aria-label="Junction frame. Click to add zone points."></canvas></div>
+  <aside>
+    <div class="panel">
+      <h2>How to draw</h2>
+      <ol>
+        <li>Pick a zone on the right (or add one).</li>
+        <li>Click on the video to place corner points around the area <b>just before the stop line</b> where that road's vehicles queue.</li>
+        <li>Press <b>Finish shape</b> (or double-click). Repeat for every road.</li>
+        <li>Add crossing zones where pedestrians wait.</li>
+        <li>Press <b>Save</b>.</li>
+      </ol>
+    </div>
+    <div class="panel">
+      <h2>Video source</h2>
+      <label for="source">File path, webcam number, phone camera URL or RTSP URL</label>
+      <div class="row"><input id="source" style="flex:1" placeholder="data/clips/demo.mp4"><button id="reload">Load frame</button></div>
+      <div class="row"><button id="uploadBtn">⬆ Upload a video</button><input type="file" id="upload" accept="video/*" hidden></div>
+    </div>
+    <div class="panel">
+      <h2>Road zones</h2>
+      <div class="row"><button class="primary" id="autoBtn">✨ Auto-detect roads</button></div>
+      <p class="muted" style="margin:0 0 8px;font-size:12px">Watches ~20 s of the video and draws a zone for each direction vehicles come from. Check them, then press Save.</p>
+      <div id="roads"></div>
+      <div class="row"><button id="addRoad">+ Road</button></div>
+      <h2 style="margin-top:8px">Crossing zones</h2><div id="crossings"></div>
+      <div class="row"><button id="addCrossing">+ Crossing</button></div>
+      <div class="row">
+        <button id="undo">Undo point</button><button id="finish">Finish shape</button><button id="clear">Clear shape</button>
+      </div>
+      <div class="row"><button class="primary" id="save">Save</button></div>
+      <div class="msg" id="msg" role="status"></div>
+    </div>
+  </aside>
+</main>
+<script>
+const COLOURS=['#38BDF8','#34D399','#A855F7','#FB923C','#A78BFA','#5EEAD4'];
+const CROSS='#FDE68A';
+const cv=document.getElementById('c'), ctx=cv.getContext('2d'), sel=document.getElementById('junction');
+let J=null, img=new Image(), active={kind:'roads',i:0}, drawing=[];
+
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+let msgErr=false;
+function msg(t,err){const m=document.getElementById('msg');m.textContent=t;m.style.color=err?'#FCA5A5':'#A7F3D0';msgErr=!!err;}
+
+async function loadList(){
+  const d=await (await fetch('/api/junctions')).json();
+  sel.innerHTML=d.junctions.map(j=>`<option value="${esc(j.id)}">${esc(j.name)}</option>`).join('');
+  sel.value=d.junctions.some(j=>j.id===d.default)?d.default:(d.junctions[0]||{}).id;
+  await loadJunction(sel.value);
+}
+async function loadJunction(id){
+  J=await (await fetch(`/api/junctions/${encodeURIComponent(id)}`)).json();
+  document.getElementById('source').value=J.source||'';
+  active={kind:'roads',i:0}; drawing=[];
+  loadFrame(); renderLists();
+}
+function loadFrame(){
+  img=new Image();
+  img.onload=()=>{cv.width=img.naturalWidth;cv.height=img.naturalHeight;if(msgErr)msg('');draw();};
+  img.onerror=()=>{msg('Could not read a frame from this video source. Check the path or URL, then Save and Load frame.',true);draw();};
+  img.src=`/api/junctions/${encodeURIComponent(J.id)}/frame?t=${Date.now()}`;
+}
+function currentZone(){return J[active.kind][active.i];}
+function colour(kind,i){return kind==='roads'?COLOURS[i%COLOURS.length]:CROSS;}
+
+function renderLists(){
+  for(const kind of ['roads','crossings']){
+    document.getElementById(kind).innerHTML=J[kind].map((z,i)=>`
+      <div class="zone ${active.kind===kind&&active.i===i?'active':''}">
+        <span class="sw" style="background:${colour(kind,i)}"></span>
+        <input aria-label="Zone name" value="${esc(z.name)}" data-kind="${kind}" data-i="${i}" class="nm">
+        <button data-kind="${kind}" data-i="${i}" class="pick">${z.polygon&&z.polygon.length>=3?'Redraw':'Draw'}</button>
+        <button data-kind="${kind}" data-i="${i}" class="del" aria-label="Delete zone">✕</button>
+      </div>`).join('')||'<p class="muted" style="margin:0 0 6px">None yet</p>';
+  }
+  document.querySelectorAll('.pick').forEach(b=>b.onclick=()=>{active={kind:b.dataset.kind,i:+b.dataset.i};drawing=[];renderLists();draw();msg(`Click points for "${currentZone().name}"`);});
+  document.querySelectorAll('.del').forEach(b=>b.onclick=()=>{J[b.dataset.kind].splice(+b.dataset.i,1);active={kind:'roads',i:0};drawing=[];renderLists();draw();});
+  document.querySelectorAll('.nm').forEach(inp=>inp.oninput=()=>{J[inp.dataset.kind][+inp.dataset.i].name=inp.value;draw();});
+}
+function poly(points,col,closed,label){
+  if(!points.length)return;
+  ctx.beginPath();points.forEach(([x,y],k)=>{const X=x*cv.width,Y=y*cv.height;k?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});
+  if(closed){ctx.closePath();ctx.fillStyle=col+'33';ctx.fill();}
+  ctx.strokeStyle=col;ctx.lineWidth=Math.max(2,cv.width/480);ctx.stroke();
+  points.forEach(([x,y])=>{ctx.beginPath();ctx.arc(x*cv.width,y*cv.height,Math.max(3,cv.width/300),0,7);ctx.fillStyle=col;ctx.fill();});
+  if(label&&closed){const cx=points.reduce((a,p)=>a+p[0],0)/points.length*cv.width,cy=points.reduce((a,p)=>a+p[1],0)/points.length*cv.height;
+    ctx.font=`bold ${Math.max(14,cv.width/60)}px Inter,sans-serif`;ctx.fillStyle='#fff';ctx.strokeStyle='#000';ctx.lineWidth=3;ctx.strokeText(label,cx-30,cy);ctx.fillText(label,cx-30,cy);}
+}
+function draw(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  if(img.complete&&img.naturalWidth)ctx.drawImage(img,0,0,cv.width,cv.height);
+  for(const kind of ['roads','crossings'])J[kind].forEach((z,i)=>{
+    const isActive=active.kind===kind&&active.i===i&&drawing.length;
+    if(!isActive)poly(z.polygon||[],colour(kind,i),true,z.name);
+  });
+  if(drawing.length)poly(drawing,colour(active.kind,active.i),false);
+}
+cv.addEventListener('click',e=>{
+  if(!currentZone()){msg('Add a zone first',true);return;}
+  const r=cv.getBoundingClientRect();
+  drawing.push([+((e.clientX-r.left)/r.width).toFixed(4),+((e.clientY-r.top)/r.height).toFixed(4)]);draw();
+});
+cv.addEventListener('dblclick',e=>{e.preventDefault();finish();});
+function finish(){
+  if(drawing.length<3){msg('A zone needs at least 3 points',true);return;}
+  currentZone().polygon=drawing;drawing=[];renderLists();draw();msg(`"${currentZone().name}" done — press Save when finished`);
+}
+document.getElementById('finish').onclick=finish;
+document.getElementById('undo').onclick=()=>{drawing.pop();draw();};
+document.getElementById('clear').onclick=()=>{drawing=[];if(currentZone())currentZone().polygon=[];renderLists();draw();};
+document.getElementById('addRoad').onclick=()=>{J.roads.push({id:'R'+(J.roads.length+1),name:'Road '+(J.roads.length+1),polygon:[]});active={kind:'roads',i:J.roads.length-1};drawing=[];renderLists();};
+document.getElementById('addCrossing').onclick=()=>{J.crossings.push({id:'C'+(J.crossings.length+1),name:'Crossing '+(J.crossings.length+1),polygon:[]});active={kind:'crossings',i:J.crossings.length-1};drawing=[];renderLists();};
+document.getElementById('reload').onclick=async()=>{J.source=document.getElementById('source').value.trim();await save(false);loadFrame();};
+document.getElementById('save').onclick=()=>save(true);
+document.getElementById('autoBtn').onclick=async()=>{
+  const b=document.getElementById('autoBtn');b.disabled=true;
+  msg('Watching the video for about 20 seconds to find the roads…');
+  try{
+    const res=await fetch(`/api/junctions/${encodeURIComponent(J.id)}/autozones`,{method:'POST'});
+    const d=await res.json();
+    if(!res.ok){msg('Auto-detect failed: '+(d.detail||res.status),true);return;}
+    if(!d.roads.length){msg(d.error||'No roads found — draw them by hand',true);return;}
+    J.roads=d.roads.map(r=>({id:r.id,name:r.name,polygon:r.polygon}));active={kind:'roads',i:0};drawing=[];renderLists();draw();
+    msg(`Found ${d.roads.length} roads from ${d.vehicles_tracked} vehicles ✓ Check them (Redraw any that look wrong), then press Save`);
+  }catch(err){msg('Auto-detect failed: '+err,true);}
+  finally{b.disabled=false;}
+};
+document.getElementById('uploadBtn').onclick=()=>document.getElementById('upload').click();
+document.getElementById('upload').onchange=async(e)=>{
+  const f=e.target.files[0]; if(!f)return;
+  msg(`Uploading ${f.name} (${(f.size/1e6).toFixed(1)} MB)…`);
+  try{
+    const res=await fetch(`/api/upload?name=${encodeURIComponent(f.name)}`,{method:'POST',body:f});
+    const data=await res.json();
+    if(!res.ok){msg('Upload failed: '+data.detail,true);return;}
+    document.getElementById('source').value=data.source;J.source=data.source;
+    await save(false);loadFrame();msg(`Uploaded ✓ ${data.source} — now draw the zones and press Save`);
+  }catch(err){msg('Upload failed: '+err,true);}
+  finally{e.target.value='';}
+};
+async function save(notify){
+  J.roads.forEach((z,i)=>z.id='R'+(i+1));J.crossings.forEach((z,i)=>z.id='C'+(i+1));
+  const res=await fetch(`/api/junctions/${encodeURIComponent(J.id)}`,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({source:J.source,roads:J.roads,crossings:J.crossings})});
+  if(!res.ok){msg('Save failed: '+(await res.json()).detail,true);return;}
+  J=await res.json();renderLists();draw();if(notify)msg('Saved ✓ — the live view now uses these zones');
+}
+sel.addEventListener('change',()=>loadJunction(sel.value));
+loadList();
+</script>
+</body>
+</html>

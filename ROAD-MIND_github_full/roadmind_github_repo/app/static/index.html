@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Crect x=%227%22 y=%221%22 width=%2210%22 height=%2222%22 rx=%225%22 fill=%22%2334D399%22/%3E%3Ccircle cx=%2212%22 cy=%227%22 r=%222%22 fill=%22%2304101F%22/%3E%3Ccircle cx=%2212%22 cy=%2212%22 r=%222%22 fill=%22%2304101F%22/%3E%3Ccircle cx=%2212%22 cy=%2217%22 r=%222%22 fill=%22%2304101F%22/%3E%3C/svg%3E">
+<title>Roadmind — officer dashboard</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===== Top bar ===== -->
+  <header class="glass topbar hl">
+    <div class="logo">
+      <div class="mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#04101F" stroke-width="2.2" stroke-linecap="round"><rect x="8" y="2.5" width="8" height="19" rx="4"/><circle cx="12" cy="7" r="1.6" fill="#04101F"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="17" r="1.6"/></svg></div>
+      <span class="grad-text">Roadmind</span>
+    </div>
+    <span class="tagline" data-i18n="tagline">Traffic lights that think about people</span>
+    <label class="muted small" for="junction" data-i18n="junction">Junction</label>
+    <select id="junction" class="select"></select>
+    <span class="chip live"><span class="dot"></span>LIVE</span>
+    <span class="chip conf-High" id="confChip" title=""><span class="dot"></span><span id="confText">Confidence: …</span></span>
+    <span class="spacer"></span>
+    <div class="seg" role="group" aria-label="Language">
+      <button id="langEn" aria-pressed="false">EN</button>
+      <button id="langBn" aria-pressed="true" class="bn">বাং</button>
+    </div>
+    <button class="btn small" id="camBtn" data-i18n="addCamera">📷 Camera</button>
+    <button class="btn small" id="vidBtn"><span id="vidText" data-i18n="uploadVideo">⬆ Upload video</span></button>
+    <input type="file" id="vidFile" accept="video/*" hidden>
+    <button class="btn small" id="planBtn" aria-expanded="false" data-i18n="planBtn">💬 Ask Roadmind</button>
+    <button class="btn small" id="rainBtn" aria-pressed="false"><span data-i18n="rainBtn">🌧 Heavy rain</span></button>
+    <button class="btn small" id="occBtn" data-i18n="assumptions">Assumptions</button>
+    <button class="btn danger" id="emBtn" aria-haspopup="true" aria-expanded="false">🚑 <span data-i18n="emergency">Emergency</span></button>
+    <div class="glass popover" id="emPop" role="menu" aria-label="Choose emergency road"></div>
+  </header>
+
+  <!-- ===== Main ===== -->
+  <div class="main">
+    <section class="glass video-panel" aria-label="Live junction camera">
+      <div class="between">
+        <p class="h" data-i18n="cameraTitle">Live junction camera · AI detection</p>
+        <span class="muted small" id="modelNote"></span>
+      </div>
+      <div class="video-box">
+        <img id="stream" alt="Live junction video with AI detection boxes and road zones">
+        <span class="vchip rec">● LIVE</span>
+        <span class="vchip fps" id="fps">starting…</span>
+        <div class="overlay lowconf" id="lowConf" role="status">
+          <div class="big">⚠ <span data-i18n="lowConfTitle">Low confidence</span></div>
+          <div id="lowConfReasons" class="bn"></div>
+          <div class="small" data-i18n="lowConfHint">Roadmind will not guess — keep the fixed timer.</div>
+        </div>
+        <div class="emergency-bar" id="emBar" role="status">
+          <span>🚑 <span id="emText"></span></span>
+          <span class="spacer"></span>
+          <button class="btn small" id="emCancel" data-i18n="cancel">Cancel</button>
+        </div>
+      </div>
+      <p class="note" data-i18n="privacy">Privacy: no number plates are read and no faces are identified. The traffic lights change only after the officer approves.</p>
+    </section>
+
+    <aside class="side">
+      <section class="glass advice hl" id="adviceCard" aria-live="polite">
+        <div class="between">
+          <p class="h" data-i18n="aiRec">AI recommendation</p>
+          <span class="row muted small"><span id="adviceTime"></span><span id="nextIn"></span>
+            <button class="iconbtn" id="refreshBtn" title="Recompute advice now" aria-label="Recompute advice now">↻</button></span>
+        </div>
+        <div class="headline"><span class="bigsec grad-text" id="bigsec">—</span><span class="what" id="what">Waiting for the first advice…</span></div>
+        <div class="explain" id="explainBox">
+          <div id="explainText" class="bn">…</div>
+          <div class="src"><span id="explainSrc"></span>
+            <button class="iconbtn" id="speakBtn" aria-label="Read the advice aloud">🔊 <span data-i18n="speak">Speak</span></button></div>
+        </div>
+        <details class="why"><summary data-i18n="why">Why? Show the numbers</summary><div id="whyBody"></div></details>
+        <div class="actions">
+          <button class="btn primary" id="acceptBtn" disabled>✓ <span data-i18n="accept">Accept</span></button>
+          <button class="btn" id="overrideBtn" disabled data-i18n="override">Override</button>
+        </div>
+        <form class="override" id="overrideForm">
+          <label for="ovSeconds" data-i18n="ovSeconds">Change green time for this road by (seconds)</label>
+          <input id="ovSeconds" type="number" min="-60" max="60" step="1" value="0">
+          <label for="ovReason" data-i18n="ovReason">Reason</label>
+          <select id="ovReason"></select>
+          <button class="btn primary" type="submit" data-i18n="ovSave">Save override</button>
+        </form>
+        <div class="careful" id="careful" role="status" hidden></div>
+        <div class="decided" id="decided" role="status"></div>
+        <p class="note" data-i18n="officerDecides">The officer decides · the lights change only after Accept or Override</p>
+      </section>
+
+      <section class="glass signals" aria-label="Traffic lights">
+        <div class="between"><p class="h" data-i18n="lightsTitle">Traffic lights</p><span class="tag" id="sigSource"></span></div>
+        <div id="signals"></div>
+        <p class="note" data-i18n="lightsNote">Changes when the officer presses Accept or Override · yellow is a fixed 3 s</p>
+      </section>
+
+      <section class="glass roads" aria-label="Roads">
+        <div class="between"><p class="h" id="roadsTitle">People waiting per road</p><span class="tag" id="rankNote"></span></div>
+        <div id="roads"><p class="muted small" data-i18n="noZones">Finding the roads automatically…</p></div>
+        <div class="ped" id="ped" hidden></div>
+      </section>
+    </aside>
+  </div>
+
+  <!-- ===== Bottom ===== -->
+  <div class="bottom" style="--cols:1">
+    <section class="glass pnl" id="simPanel" hidden aria-label="Simulated comparison">
+      <div class="between"><p class="h" data-i18n="simTitle">Roadmind vs fixed timer</p><span class="tag sim" data-i18n="simulated">Simulated</span></div>
+      <div class="cmp" id="cmp"><span class="muted small" data-i18n="simWait">Waiting for advice…</span></div>
+      <div class="delta" id="simDelta"></div>
+      <svg class="chart" id="previewChart" viewBox="0 0 300 110" preserveAspectRatio="none" role="img" aria-label="Predicted people waiting over the next 2 minutes"></svg>
+      <div class="note" data-i18n="previewNote">Next 2 minutes if you accept (people waiting) · grey = fixed timer, colour = Roadmind</div>
+    </section>
+    <section class="glass pnl" aria-label="Decision log">
+      <div class="between"><p class="h" data-i18n="logTitle">Decision log</p><span class="tag" data-i18n="logNote">Every decision recorded</span></div>
+      <ul class="log" id="log"></ul>
+    </section>
+    <section class="glass pnl" id="fcPanel" hidden aria-label="Rhythm forecast">
+      <div class="between"><p class="h" data-i18n="fcTitle">Rhythm forecast · next 30 min</p><span class="tag" id="fcNow"></span></div>
+      <svg class="chart" id="fcChart" viewBox="0 0 300 110" preserveAspectRatio="none" role="img" aria-label="Forecast of people waiting"></svg>
+      <div id="fcBanner"></div>
+      <div class="note" id="fcNote"></div>
+    </section>
+  </div>
+</div>
+
+<dialog id="occDialog" aria-labelledby="occTitle">
+  <h3 id="occTitle" data-i18n="occTitle">People per vehicle (assumptions)</h3>
+  <p class="muted small" data-i18n="occHelp">Average people in each vehicle type. These are estimates, not exact counts — adjust them for this junction.</p>
+  <form id="occForm"><div class="occ-grid" id="occGrid"></div>
+    <div class="actions"><button class="btn primary" type="submit" data-i18n="save">Save</button><button class="btn" type="button" id="occClose" data-i18n="close">Close</button></div>
+  </form>
+</dialog>
+
+<dialog id="logDialog" aria-labelledby="logTitle2">
+  <h3 id="logTitle2" data-i18n="logDetail">Decision details</h3>
+  <div id="logBody"></div>
+  <div class="actions"><button class="btn" id="logClose" data-i18n="close">Close</button></div>
+</dialog>
+
+<section class="glass chat chatpanel" id="chatPanel" aria-label="Ask Roadmind" hidden>
+  <div class="between"><p class="h" data-i18n="chatTitle">Ask Roadmind</p>
+    <button class="iconbtn" id="chatClose" aria-label="Close">✕</button></div>
+  <div class="chatlog" id="chatLog" aria-live="polite"></div>
+  <form class="chatform" id="chatForm">
+    <input id="chatInput" autocomplete="off" maxlength="500" placeholder="Ask in Bangla or English…" aria-label="Your question">
+    <button class="btn primary small" type="submit" data-i18n="chatSend">Ask</button>
+  </form>
+</section>
+
+<div class="toast" id="toast" role="status"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
